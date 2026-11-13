@@ -1,0 +1,29 @@
+{
+  "instances": {
+    "playground": {
+      "url": "https://playground.example.invalid/openbis",
+      "freezer_collection": "/SPACE/PROJECT/FREEZER_COLLECTION"
+    },
+    "main": {
+      "url": "https://main.example.invalid/openbis",
+      "freezer_collection": "/SPACE/PROJECT/MAIN_FREEZERS"
+    }
+  },
+  "schema": {
+    "freezer_type": "FREEZER_TYPE",
+    "person_type": "PERSON_TYPE",
+    "person_username_property": "username_property",
+    "person_name_property": "$name",
+    "person_given_name_property": "given_name",
+    "person_family_name_property": "family_name",
+    "person_organizational_entity_property": "organization_property",
+    "person_organizational_entity_prefix": "ORG_",
+    "control_collection": "/SPACE/PROJECT/CONTROL_COLLECTION",
+    "control_type": "CONTROL_TYPE",
+    "object_name_property": "$name",
+    "monitoring_date_property": "date_property",
+    "temp_min_property": "minimum_property",
+    "temp_max_property": "maximum_property",
+    "acting_person_property": "person_property"
+  }
+}

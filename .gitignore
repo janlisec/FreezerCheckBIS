@@ -1,0 +1,12 @@
+.venv/
+__pycache__/
+.pytest_cache/
+*.py[cod]
+.env
+.env.*
+!.env.example
+flask_secret_key.txt
+DEVELOPMENT_PLAN.md
+freezercheckbis.config.json
+OPENBIS_INTERACTION.md
+datastore_interaction.py
