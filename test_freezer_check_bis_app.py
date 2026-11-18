@@ -27,6 +27,10 @@ TEST_CONFIG = {
     },
     "schema": {
         "freezer_type": "FREEZER_TYPE",
+        "freezer_name_property": "$name",
+        "freezer_location_property": "location_property",
+        "freezer_temp_min_property": "minimum_property",
+        "freezer_temp_max_property": "maximum_property",
         "person_type": "PERSON_TYPE",
         "person_username_property": "username_property",
         "person_name_property": "$name",
@@ -81,7 +85,7 @@ class FreezerCheckBISAppTests(unittest.TestCase):
         self.assertIsNotNone(match)
         return match.group(1)
 
-    def make_session(self, *, instance_name="playground", main_writes_enabled=False):
+    def make_session(self, *, instance_name="playground"):
         person_id = "/SPACE/PROJECT/PEOPLE/TEST_USER"
         startup = OpenBISStartup(
             user_id="testuser",
@@ -91,14 +95,20 @@ class FreezerCheckBISAppTests(unittest.TestCase):
                 PersonOption("/SPACE/PROJECT/PEOPLE/OTHER_USER", "Alex Sample"),
             ),
             freezers=(
-                Freezer("freezer-perm-id", "/SPACE/PROJECT/FREEZER_COLLECTION/ONE"),
+                Freezer(
+                    "freezer-perm-id",
+                    "/SPACE/PROJECT/FREEZER_COLLECTION/ONE",
+                    "Test freezer",
+                    "AH_8_15_2_329B",
+                    "-80.0",
+                    "-60.0",
+                ),
             ),
         )
         return OpenBISSession(
             client=Mock(),
             startup=startup,
             instance_name=instance_name,
-            main_writes_enabled=main_writes_enabled,
         )
 
     def login(self, openbis_session, *, instance_name="playground"):
@@ -155,6 +165,31 @@ class FreezerCheckBISAppTests(unittest.TestCase):
         self.assertEqual(home.status_code, 200)
         self.assertIn(b"Signed in to playground as testuser", home.data)
         self.assertIn(b"freezer-perm-id", home.data)
+        self.assertIn(b'"name": "Test freezer"', home.data)
+        self.assertIn(b'"bam_location_complete": "AH_8_15_2_329B"', home.data)
+        self.assertIn(b'"temp_min_celsius": "-80.0"', home.data)
+        self.assertIn(b'"temp_max_celsius": "-60.0"', home.data)
+        self.assertIn(b"Complete BAM Location", home.data)
+        self.assertIn(b"Temperature Min", home.data)
+        self.assertIn(b"Temperature Max", home.data)
+
+    def test_freezer_limits_are_sent_to_the_browser_for_live_range_warnings(self):
+        self.login(self.make_session())
+        home = self.client.get("/")
+
+        self.assertIn(b'"temp_min_celsius": "-80.0"', home.data)
+        self.assertIn(b'"temp_max_celsius": "-60.0"', home.data)
+        self.assertIn(b".temperature-out-of-range { background-color: #f4cccc; }", home.data)
+        self.assertIn(b"minimum < allowedMinimum", home.data)
+        self.assertIn(b"maximum > allowedMaximum", home.data)
+        self.assertIn(
+            b'tempMin.addEventListener("input", updateTemperatureWarnings)',
+            home.data,
+        )
+        self.assertIn(
+            b'tempMax.addEventListener("input", updateTemperatureWarnings)',
+            home.data,
+        )
 
     def test_login_rejects_missing_csrf_token(self):
         response = self.client.post(
@@ -199,48 +234,37 @@ class FreezerCheckBISAppTests(unittest.TestCase):
         self.assertIn(b"Could not sign in.", response.data)
         self.assertIn(b'value="main" checked', response.data)
 
-    def test_main_session_is_read_only_even_for_direct_save_requests(self):
+    def test_main_session_can_save_temperature_checks(self):
         self.login(self.make_session(instance_name="main"), instance_name="main")
         home = self.client.get("/")
         self.assertIn(b"Signed in to main as testuser", home.data)
-        self.assertIn(b"Main is in read-only test mode", home.data)
-        with patch("freezer_check_bis_app.create_temperature_check") as create_check:
-            response = self.client.post(
-                "/checks",
-                data={"csrf_token": self.form_token(home, "csrf_token")},
-            )
-        self.assertEqual(response.status_code, 403)
-        create_check.assert_not_called()
-
-    def test_main_write_test_allows_only_one_save(self):
-        main_session = self.make_session(
-            instance_name="main",
-            main_writes_enabled=True,
-        )
-        self.login(main_session, instance_name="main")
-        home = self.client.get("/")
-        post_data = {
-            "csrf_token": self.form_token(home, "csrf_token"),
-            "submission_token": self.form_token(home, "submission_token"),
-            "freezer_perm_id": "freezer-perm-id",
-            "monitoring_date": "2026-11-13",
-            "temp_min_celsius": "-20",
-            "temp_max_celsius": "-18",
-            "person_identifier": "/SPACE/PROJECT/PEOPLE/TEST_USER",
-        }
+        self.assertNotIn(b"read-only", home.data)
+        self.assertNotIn(b"test record", home.data)
         record = Mock(identifier="/SPACE/PROJECT/CONTROL_COLLECTION/RECORD1")
         with patch(
             "freezer_check_bis_app.create_temperature_check",
             return_value=record,
         ) as create_check:
-            response = self.client.post("/checks", data=post_data)
-            self.assertEqual(response.status_code, 302)
-            next_page = self.client.get("/")
-            self.assertIn(b"already been saved in this login session", next_page.data)
-            second_submission = self.client.post("/checks", data=post_data)
+            for _ in range(2):
+                home = self.client.get("/")
+                response = self.client.post(
+                    "/checks",
+                    data={
+                        "csrf_token": self.form_token(home, "csrf_token"),
+                        "submission_token": self.form_token(
+                            home, "submission_token"
+                        ),
+                        "freezer_perm_id": "freezer-perm-id",
+                        "monitoring_date": "2026-11-13",
+                        "temp_min_celsius": "-20",
+                        "temp_max_celsius": "-18",
+                        "person_identifier": "/SPACE/PROJECT/PEOPLE/TEST_USER",
+                    },
+                )
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(response.headers["Location"], "/")
 
-        self.assertEqual(second_submission.status_code, 409)
-        create_check.assert_called_once()
+        self.assertEqual(create_check.call_count, 2)
 
     def test_latest_check_endpoint_returns_json_for_authenticated_session(self):
         self.login(self.make_session())

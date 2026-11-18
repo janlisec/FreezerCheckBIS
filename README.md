@@ -10,6 +10,10 @@ a new control record linked to that freezer.
 - Select Playground or Main at login (Playground is selected by default).
 - Authenticate with the user's own openBIS credentials.
 - Load freezer perm-IDs from the configured inventory collection.
+- Show the freezer name, complete BAM location, and configured temperature
+  limits after a freezer is identified.
+- Highlight a recorded minimum below the freezer's allowed minimum, or a
+  recorded maximum above its allowed maximum.
 - Enter a freezer perm-ID manually; QR scanning is available when supported by
   the browser's `BarcodeDetector` API.
 - Default the person and date, and prefill temperatures from the latest
@@ -38,7 +42,9 @@ Copy-Item freezercheckbis.config.example.json freezercheckbis.config.json
 
 Edit `freezercheckbis.config.json` with the HTTPS instance URLs, freezer
 inventory collections, control collection, object types, and property codes
-used by your openBIS environment. The example contains placeholder values only.
+used by your openBIS environment. This includes the freezer name, complete
+location, and min/max temperature property codes. The example contains
+placeholder values only.
 This local configuration file is ignored by Git.
 
 The app reads the config from `freezercheckbis.config.json` beside the service
@@ -57,7 +63,6 @@ writes. Close the server console window to stop it.
 ```powershell
 $env:FLASK_SECRET_KEY = & .\.venv\Scripts\python.exe -c "import secrets; print(secrets.token_urlsafe(48))"
 $env:FREEZERCHECKBIS_CONFIG = (Resolve-Path .\freezercheckbis.config.json).Path
-$env:OPENBIS_ALLOW_MAIN_WRITES = "0"
 $env:FLASK_COOKIE_SECURE = "0"
 .\.venv\Scripts\python.exe .\freezer_check_bis_app.py
 ```
@@ -72,10 +77,9 @@ Playground and Main freezer collection locations are configured independently.
 Temperature checks are created in the configured control collection. Freezer
 perm-IDs are instance-specific and must not be interchanged.
 
-Main is read-only unless `OPENBIS_ALLOW_MAIN_WRITES=1` is set in the process
-environment. When enabled, the application allows at most one successful Main
-save per login session. This is a test safeguard, not a substitute for review
-or production write controls. The desktop launcher always disables Main writes.
+Playground and Main both allow saves. The signed-in openBIS account must have
+permission to create control records in the configured collection. Freezer
+perm-IDs are instance-specific and must not be interchanged.
 
 ## Tests
 

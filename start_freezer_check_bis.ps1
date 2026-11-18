@@ -31,7 +31,6 @@ if (-not (Test-Path -LiteralPath $secretPath)) {
 
 $env:FLASK_SECRET_KEY = (Get-Content -LiteralPath $secretPath -Raw).Trim()
 $env:FREEZERCHECKBIS_CONFIG = $configPath
-$env:OPENBIS_ALLOW_MAIN_WRITES = "0"
 $env:FLASK_COOKIE_SECURE = "0"
 
 $server = Start-Process `

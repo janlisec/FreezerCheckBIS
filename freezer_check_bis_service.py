@@ -24,6 +24,10 @@ class InstanceConfig:
 class OpenBISConfig:
     instances: dict[str, InstanceConfig]
     freezer_type: str
+    freezer_name_property: str
+    freezer_location_property: str
+    freezer_temp_min_property: str
+    freezer_temp_max_property: str
     person_type: str
     person_username_property: str
     person_name_property: str
@@ -100,6 +104,10 @@ def _load_config() -> OpenBISConfig:
         raise RuntimeError("Configuration 'schema' must be a JSON object.")
     schema_fields = (
         "freezer_type",
+        "freezer_name_property",
+        "freezer_location_property",
+        "freezer_temp_min_property",
+        "freezer_temp_max_property",
         "person_type",
         "person_username_property",
         "person_name_property",
@@ -115,9 +123,7 @@ def _load_config() -> OpenBISConfig:
         "temp_max_property",
         "acting_person_property",
     )
-    schema_values = {
-        key: _required_string(schema, key) for key in schema_fields
-    }
+    schema_values = {key: _required_string(schema, key) for key in schema_fields}
     return OpenBISConfig(instances=instances, **schema_values)
 
 
@@ -125,6 +131,10 @@ def _load_config() -> OpenBISConfig:
 class Freezer:
     perm_id: str
     identifier: str
+    name: str = ""
+    bam_location_complete: str = ""
+    temp_min_celsius: str = ""
+    temp_max_celsius: str = ""
 
 
 @dataclass(frozen=True)
@@ -156,11 +166,6 @@ class OpenBISSession:
     startup: OpenBISStartup
     config: OpenBISConfig = field(default_factory=lambda: _load_config(), repr=False)
     instance_name: str = "playground"
-    main_writes_enabled: bool = False
-
-    @property
-    def read_only(self) -> bool:
-        return self.instance_name == "main" and not self.main_writes_enabled
 
 
 def _configured_openbis_target(
@@ -174,13 +179,6 @@ def _configured_openbis_target(
         if selected_instance not in config.instances:
             raise ValueError("Select either playground or main.")
     return config.instances[instance_name].url, instance_name, config
-
-
-def _main_writes_enabled(instance_name: str) -> bool:
-    return (
-        instance_name == "main"
-        and os.environ.get("OPENBIS_ALLOW_MAIN_WRITES", "").strip() == "1"
-    )
 
 
 def _account_rows(client: Openbis, login_name: str):
@@ -224,12 +222,18 @@ def _person_identifier(
 def _freezer_inventory(
     client: Openbis,
     collection: str,
-    freezer_type: str,
+    config: OpenBISConfig,
 ) -> tuple[Freezer, ...]:
     result = client.get_objects(
         collection=collection,
-        type=freezer_type,
+        type=config.freezer_type,
         count=FREEZER_QUERY_LIMIT,
+        props=[
+            config.freezer_name_property,
+            config.freezer_location_property,
+            config.freezer_temp_min_property,
+            config.freezer_temp_max_property,
+        ],
     )
     if result.totalCount != len(result.df):
         raise RuntimeError(
@@ -249,16 +253,33 @@ def _freezer_inventory(
         if perm_id in seen_perm_ids:
             raise RuntimeError("The freezer query returned duplicate permanent IDs.")
         seen_perm_ids.add(perm_id)
-        freezers.append(Freezer(perm_id=perm_id, identifier=identifier))
+        freezers.append(
+            Freezer(
+                perm_id=perm_id,
+                identifier=identifier,
+                name=_freezer_property(
+                    row.get(config.freezer_name_property.upper())
+                ) or identifier.rsplit("/", 1)[-1],
+                bam_location_complete=_freezer_property(
+                    row.get(config.freezer_location_property.upper())
+                ),
+                temp_min_celsius=_freezer_property(
+                    row.get(config.freezer_temp_min_property.upper())
+                ),
+                temp_max_celsius=_freezer_property(
+                    row.get(config.freezer_temp_max_property.upper())
+                ),
+            )
+        )
 
     if not freezers:
         all_freezers = client.get_objects(
-            type=freezer_type,
+            type=config.freezer_type,
             count=FREEZER_QUERY_LIMIT,
         )
         if all_freezers.totalCount != len(all_freezers.df):
             raise RuntimeError(
-                f"No {freezer_type} objects were found in {collection}; "
+                f"No {config.freezer_type} objects were found in {collection}; "
                 "the instance-wide freezer query was incomplete, so collection "
                 "locations could not be diagnosed."
             )
@@ -274,17 +295,24 @@ def _freezer_inventory(
             if len(other_collections) > 10:
                 collection_list += f", and {len(other_collections) - 10} more"
             raise RuntimeError(
-                f"No {freezer_type} objects were found in {collection}. "
+                f"No {config.freezer_type} objects were found in {collection}. "
                 f"The instance has {all_freezers.totalCount} visible freezer "
                 f"objects in other collections: {collection_list}. "
                 "Check which collection is the intended freezer inventory."
             )
         raise RuntimeError(
-            f"No visible {freezer_type} objects were found in "
+            f"No visible {config.freezer_type} objects were found in "
             f"{collection} or elsewhere in this instance. Verify the "
             "object type, collection path, and account permissions."
         )
     return tuple(freezers)
+
+
+def _freezer_property(value: object) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    return "" if text.casefold() in {"nan", "<na>"} else text
 
 
 def _person_inventory(
@@ -319,11 +347,10 @@ def _person_inventory(
         organizational_entity = row.get(
             config.person_organizational_entity_property.upper()
         )
-        if (
-            not isinstance(organizational_entity, str)
-            or not organizational_entity.startswith(
-                config.person_organizational_entity_prefix
-            )
+        if not isinstance(
+            organizational_entity, str
+        ) or not organizational_entity.startswith(
+            config.person_organizational_entity_prefix
         ):
             continue
 
@@ -364,9 +391,6 @@ def create_temperature_check(
     person_identifier: str,
 ):
     """Create one new control record, linked to a loaded freezer."""
-    if session.read_only:
-        raise RuntimeError("Record creation is disabled for the main instance.")
-
     freezer_by_id = {freezer.perm_id: freezer for freezer in session.startup.freezers}
     freezer = freezer_by_id.get(freezer_perm_id)
     if freezer is None:
@@ -401,8 +425,7 @@ def create_temperature_check(
     )
     if (
         len(collections.df) != 1
-        or collections.df.iloc[0].get("identifier")
-        != session.config.control_collection
+        or collections.df.iloc[0].get("identifier") != session.config.control_collection
     ):
         raise RuntimeError("The configured control collection was not uniquely found.")
 
@@ -411,12 +434,13 @@ def create_temperature_check(
         parent.identifier != freezer.identifier
         or parent.type != session.config.freezer_type
     ):
-        raise RuntimeError("The selected freezer no longer matches the loaded inventory.")
+        raise RuntimeError(
+            "The selected freezer no longer matches the loaded inventory."
+        )
 
     properties = {
         session.config.object_name_property: (
-            f"Freezer check {freezer.identifier.rsplit('/', 1)[-1]} "
-            f"{monitoring_date}"
+            f"Freezer check {freezer.identifier.rsplit('/', 1)[-1]} {monitoring_date}"
         ),
         session.config.monitoring_date_property: monitoring_date,
         session.config.temp_min_property: temp_min_celsius,
@@ -499,7 +523,7 @@ def authenticate_openbis(
     user_id = _account_rows(client, login_name)
     person_identifier = _person_identifier(client, user_id, config)
     freezer_collection = config.instances[instance_name].freezer_collection
-    freezers = _freezer_inventory(client, freezer_collection, config.freezer_type)
+    freezers = _freezer_inventory(client, freezer_collection, config)
     people = _person_inventory(client, person_identifier, config)
 
     return OpenBISSession(
@@ -512,5 +536,4 @@ def authenticate_openbis(
         ),
         config=config,
         instance_name=instance_name,
-        main_writes_enabled=_main_writes_enabled(instance_name),
     )

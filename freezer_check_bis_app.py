@@ -120,8 +120,12 @@ STARTUP_TEMPLATE = """<!doctype html>
     .scan-grid > label, .scan-grid > .wide { grid-column: 1 / -1; }
     .field { min-width: 0; }
     .field label { margin: .25rem 0 .4rem; }
+    .temperature-out-of-range { background-color: #f4cccc; }
     .action-grid { margin-top: 1rem; }
     .action-grid button { margin: 0; }
+    .freezer-details { display: grid; gap: .35rem .75rem; grid-template-columns: max-content minmax(0, 1fr); margin: .5rem 0 1rem; }
+    .freezer-details dt { font-weight: bold; }
+    .freezer-details dd { margin: 0; overflow-wrap: anywhere; }
     .spinner { animation: spin 1s linear infinite; border: .2rem solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; height: 1rem; margin-right: .5rem; vertical-align: -.15rem; width: 1rem; }
     .spinner[hidden] { display: none !important; }
     button:disabled { cursor: wait; opacity: .65; }
@@ -145,17 +149,6 @@ STARTUP_TEMPLATE = """<!doctype html>
     <h1>Freezer temperature check</h1>
     <p>Signed in to {{ instance_name }} as {{ user_id }}.
        {{ freezers|length }} freezers loaded.</p>
-    {% if read_only %}
-      <p role="status"><strong>Main is in read-only test mode.</strong>
-         Saving temperature checks is disabled.</p>
-    {% elif main_write_test %}
-      <p role="status"><strong>Main write test is enabled.</strong>
-         One save is allowed per login session. Verify the freezer and values
-         before saving.</p>
-      {% if main_test_write_used %}
-        <p role="status">The main test record has already been saved in this login session.</p>
-      {% endif %}
-    {% endif %}
     {% for category, message in get_flashed_messages(with_categories=true) %}
       <p role="alert" data-category="{{ category }}">{{ message }}</p>
     {% endfor %}
@@ -176,6 +169,15 @@ STARTUP_TEMPLATE = """<!doctype html>
       </div>
       <section id="temperature-fields" hidden>
         <h2 id="selected-freezer"></h2>
+        <p id="selected-freezer-identifier"></p>
+        <dl class="freezer-details">
+          <dt>Complete BAM Location</dt>
+          <dd id="freezer-location"></dd>
+          <dt>Temperature Min</dt>
+          <dd id="freezer-temp-min"></dd>
+          <dt>Temperature Max</dt>
+          <dd id="freezer-temp-max"></dd>
+        </dl>
         <div class="field-grid">
           <div class="field">
             <label for="temp-min">Minimum temperature (°C)</label>
@@ -205,13 +207,9 @@ STARTUP_TEMPLATE = """<!doctype html>
         </div>
       </section>
       <div class="action-grid">
-        <button id="submit-check" type="submit" disabled
-                {% if read_only %}title="Saving is disabled in main read-only mode"{% endif %}
-                aria-busy="false">
+        <button id="submit-check" type="submit" disabled aria-busy="false">
           <span id="save-spinner" class="spinner" aria-hidden="true" hidden></span>
-          <span id="save-button-label">
-            {% if main_write_test %}Save one main test record{% else %}Save temperature check{% endif %}
-          </span>
+          <span id="save-button-label">Save temperature check</span>
         </button>
         <button type="submit" form="logout-form">Sign out</button>
       </div>
@@ -222,8 +220,6 @@ STARTUP_TEMPLATE = """<!doctype html>
   </main>
   <script>
     const freezers = {{ freezer_data|tojson }};
-    const readOnly = {{ read_only|tojson }};
-    const mainTestWriteUsed = {{ main_test_write_used|tojson }};
     const freezersByPermId = new Map(
       freezers.map((freezer) => [freezer.perm_id, freezer])
     );
@@ -235,6 +231,10 @@ STARTUP_TEMPLATE = """<!doctype html>
     const stopScan = document.getElementById("stop-scan");
     const temperatureFields = document.getElementById("temperature-fields");
     const selectedFreezer = document.getElementById("selected-freezer");
+    const selectedFreezerIdentifier = document.getElementById("selected-freezer-identifier");
+    const freezerLocation = document.getElementById("freezer-location");
+    const freezerTempMin = document.getElementById("freezer-temp-min");
+    const freezerTempMax = document.getElementById("freezer-temp-max");
     const monitoringDate = document.getElementById("monitoring-date");
     const tempMin = document.getElementById("temp-min");
     const tempMax = document.getElementById("temp-max");
@@ -247,6 +247,29 @@ STARTUP_TEMPLATE = """<!doctype html>
     let detector = null;
     let historyRequestId = 0;
     let selectedPermId = null;
+    let selectedFreezerData = null;
+
+    function updateTemperatureWarnings() {
+      const minimum = Number(tempMin.value);
+      const maximum = Number(tempMax.value);
+      const allowedMinimum = Number(selectedFreezerData?.temp_min_celsius);
+      const allowedMaximum = Number(selectedFreezerData?.temp_max_celsius);
+
+      tempMin.classList.toggle(
+        "temperature-out-of-range",
+        Boolean(tempMin.value.trim()) &&
+          Number.isFinite(minimum) &&
+          Number.isFinite(allowedMinimum) &&
+          minimum < allowedMinimum
+      );
+      tempMax.classList.toggle(
+        "temperature-out-of-range",
+        Boolean(tempMax.value.trim()) &&
+          Number.isFinite(maximum) &&
+          Number.isFinite(allowedMaximum) &&
+          maximum > allowedMaximum
+      );
+    }
 
     function validateFreezerId() {
       const submittedId = idInput.value.trim();
@@ -254,11 +277,17 @@ STARTUP_TEMPLATE = """<!doctype html>
       if (!freezer) {
         historyRequestId += 1;
         selectedPermId = null;
+        selectedFreezerData = null;
         status.textContent = submittedId
           ? "Invalid freezer perm-ID. Check the QR code or enter a valid ID."
           : "";
         temperatureFields.hidden = true;
         selectedFreezer.textContent = "";
+        selectedFreezerIdentifier.textContent = "";
+        freezerLocation.textContent = "";
+        freezerTempMin.textContent = "";
+        freezerTempMax.textContent = "";
+        updateTemperatureWarnings();
         submitCheck.disabled = true;
         return;
       }
@@ -267,11 +296,22 @@ STARTUP_TEMPLATE = """<!doctype html>
         tempMin.value = "";
         tempMax.value = "";
         selectedPermId = freezer.perm_id;
+        selectedFreezerData = freezer;
         loadLatestReadings(freezer);
       }
-      selectedFreezer.textContent = freezer.identifier;
+      selectedFreezer.textContent = freezer.name || freezer.identifier;
+      selectedFreezerIdentifier.textContent = `Identifier: ${freezer.identifier}`;
+      freezerLocation.textContent =
+        freezer.bam_location_complete || "Not recorded";
+      freezerTempMin.textContent = freezer.temp_min_celsius
+        ? `${freezer.temp_min_celsius} °C`
+        : "Not recorded";
+      freezerTempMax.textContent = freezer.temp_max_celsius
+        ? `${freezer.temp_max_celsius} °C`
+        : "Not recorded";
+      updateTemperatureWarnings();
       temperatureFields.hidden = false;
-      submitCheck.disabled = readOnly || mainTestWriteUsed;
+      submitCheck.disabled = false;
     }
 
     async function loadLatestReadings(freezer) {
@@ -293,6 +333,7 @@ STARTUP_TEMPLATE = """<!doctype html>
         if (result.latest_check) {
           tempMin.value = result.latest_check.temp_min_celsius;
           tempMax.value = result.latest_check.temp_max_celsius;
+          updateTemperatureWarnings();
           status.textContent =
             `Freezer verified. Readings loaded from ${result.latest_check.monitoring_date}.`;
         } else {
@@ -373,6 +414,8 @@ STARTUP_TEMPLATE = """<!doctype html>
     }
 
     idInput.addEventListener("input", validateFreezerId);
+    tempMin.addEventListener("input", updateTemperatureWarnings);
+    tempMax.addEventListener("input", updateTemperatureWarnings);
     checkForm.addEventListener("submit", (event) => {
       validateFreezerId();
       if (temperatureFields.hidden || !checkForm.reportValidity()) {
@@ -410,8 +453,6 @@ class _ServerSession:
     openbis_session: OpenBISSession
     expires_at: float
     submission_token: str | None = None
-    main_test_write_in_progress: bool = False
-    main_test_write_used: bool = False
 
 
 class _SessionStore:
@@ -473,35 +514,6 @@ class _SessionStore:
             return isinstance(expected, str) and hmac.compare_digest(
                 expected, submitted
             )
-
-    def begin_main_test_write(self, session_id: str) -> bool:
-        with self._lock:
-            entry = self._sessions.get(session_id)
-            if (
-                entry is None
-                or entry.expires_at <= time.monotonic()
-                or entry.openbis_session.read_only
-                or not entry.openbis_session.main_writes_enabled
-                or entry.main_test_write_in_progress
-                or entry.main_test_write_used
-            ):
-                return False
-            entry.main_test_write_in_progress = True
-            return True
-
-    def finish_main_test_write(self, session_id: str, succeeded: bool) -> None:
-        with self._lock:
-            entry = self._sessions.get(session_id)
-            if entry is None:
-                return
-            entry.main_test_write_in_progress = False
-            entry.main_test_write_used = succeeded
-
-    def main_test_write_used(self, session_id: str) -> bool:
-        with self._lock:
-            entry = self._sessions.get(session_id)
-            return bool(entry and entry.main_test_write_used)
-
 
 def _configured_secret(secret_key: str | None) -> str:
     key = secret_key or os.environ.get("FLASK_SECRET_KEY", "")
@@ -568,14 +580,15 @@ def create_app(secret_key: str | None = None) -> Flask:
                 STARTUP_TEMPLATE,
                 user_id=openbis_session.startup.user_id,
                 instance_name=openbis_session.instance_name,
-                read_only=openbis_session.read_only,
-                main_write_test=openbis_session.main_writes_enabled,
-                main_test_write_used=sessions.main_test_write_used(session_id),
                 freezers=openbis_session.startup.freezers,
                 freezer_data=[
                     {
                         "perm_id": freezer.perm_id,
                         "identifier": freezer.identifier,
+                        "name": freezer.name,
+                        "bam_location_complete": freezer.bam_location_complete,
+                        "temp_min_celsius": freezer.temp_min_celsius,
+                        "temp_max_celsius": freezer.temp_max_celsius,
                     }
                     for freezer in openbis_session.startup.freezers
                 ],
@@ -680,11 +693,6 @@ def create_app(secret_key: str | None = None) -> Flask:
             flash("Your openBIS session expired. Please sign in again.", "error")
             return redirect(url_for("login_form"))
         session_id, openbis_session = authenticated
-        if openbis_session.read_only:
-            return "Record creation is disabled for the main read-only test.", 403
-        if openbis_session.main_writes_enabled and sessions.main_test_write_used(session_id):
-            return "The one allowed main test record has already been saved.", 409
-
         freezer_perm_id = request.form.get("freezer_perm_id", "").strip()
         monitoring_date = request.form.get("monitoring_date", "").strip()
         person_identifier = request.form.get("person_identifier", "").strip()
@@ -704,10 +712,6 @@ def create_app(secret_key: str | None = None) -> Flask:
             flash("This form was already submitted or has expired. Review and retry.", "error")
             return render_home(session_id, openbis_session, 409)
 
-        main_test_write = openbis_session.main_writes_enabled
-        if main_test_write and not sessions.begin_main_test_write(session_id):
-            return "A main test record was already saved or is currently being saved.", 409
-
         try:
             record = create_temperature_check(
                 openbis_session,
@@ -718,8 +722,6 @@ def create_app(secret_key: str | None = None) -> Flask:
                 person_identifier=person_identifier,
             )
         except (ValueError, RuntimeError, RequestException) as error:
-            if main_test_write:
-                sessions.finish_main_test_write(session_id, succeeded=False)
             app.logger.warning(
                 "Temperature check save failed (%s): %s",
                 type(error).__name__,
@@ -728,8 +730,6 @@ def create_app(secret_key: str | None = None) -> Flask:
             flash(f"Temperature check was not saved: {error}", "error")
             return render_home(session_id, openbis_session, 400)
 
-        if main_test_write:
-            sessions.finish_main_test_write(session_id, succeeded=True)
         flash(f"Temperature check saved as {record.identifier}.", "success")
         return redirect(url_for("home"))
 

@@ -22,6 +22,10 @@ TEST_CONFIG = {
     },
     "schema": {
         "freezer_type": "FREEZER_TYPE",
+        "freezer_name_property": "$name",
+        "freezer_location_property": "location_property",
+        "freezer_temp_min_property": "minimum_property",
+        "freezer_temp_max_property": "maximum_property",
         "person_type": "PERSON_TYPE",
         "person_username_property": "username_property",
         "person_name_property": "$name",
@@ -54,7 +58,6 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
             os.environ,
             {
                 "FREEZERCHECKBIS_CONFIG": self.config_path,
-                "OPENBIS_ALLOW_MAIN_WRITES": "",
             },
         )
         self.environment.start()
@@ -108,10 +111,18 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
                     {
                         "permId": "freezer-1",
                         "identifier": "/SPACE/PROJECT/FREEZER_COLLECTION/ONE",
+                        "$NAME": "Test freezer",
+                        "LOCATION_PROPERTY": "AH_8_15_2_329B",
+                        "MINIMUM_PROPERTY": "-80.0",
+                        "MAXIMUM_PROPERTY": "-60.0",
                     },
                     {
                         "permId": "freezer-2",
                         "identifier": "/SPACE/PROJECT/FREEZER_COLLECTION/TWO",
+                        "$NAME": "Second freezer",
+                        "LOCATION_PROPERTY": "AH_8_15_2_329C",
+                        "MINIMUM_PROPERTY": "-40.0",
+                        "MAXIMUM_PROPERTY": "-20.0",
                     },
                 ]
             ),
@@ -149,6 +160,12 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
             collection="/SPACE/PROJECT/FREEZER_COLLECTION",
             type="FREEZER_TYPE",
             count=service.FREEZER_QUERY_LIMIT,
+            props=[
+                "$name",
+                "location_property",
+                "minimum_property",
+                "maximum_property",
+            ],
         )
         self.assertEqual(session.startup.user_id, "testuser")
         self.assertEqual(
@@ -158,6 +175,17 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
         self.assertEqual(
             [freezer.perm_id for freezer in session.startup.freezers],
             ["freezer-1", "freezer-2"],
+        )
+        self.assertEqual(
+            session.startup.freezers[0],
+            service.Freezer(
+                perm_id="freezer-1",
+                identifier="/SPACE/PROJECT/FREEZER_COLLECTION/ONE",
+                name="Test freezer",
+                bam_location_complete="AH_8_15_2_329B",
+                temp_min_celsius="-80.0",
+                temp_max_celsius="-60.0",
+            ),
         )
         self.assertEqual(
             [person.identifier for person in session.startup.people],
@@ -205,14 +233,7 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "either playground or main"):
             service._configured_openbis_target("production")
 
-    def test_main_writes_require_explicit_environment_flag(self):
-        os.environ.pop("OPENBIS_ALLOW_MAIN_WRITES", None)
-        self.assertFalse(service._main_writes_enabled("main"))
-        os.environ["OPENBIS_ALLOW_MAIN_WRITES"] = "1"
-        self.assertTrue(service._main_writes_enabled("main"))
-        self.assertFalse(service._main_writes_enabled("playground"))
-
-    def test_authentication_marks_main_session_read_only(self):
+    def test_authentication_creates_writable_main_session(self):
         client = Mock()
         client.get_persons.return_value = Mock(
             df=pd.DataFrame([{"userId": "testuser", "active": True}])
@@ -258,11 +279,16 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
 
         factory.assert_called_once_with("https://main.example.invalid/openbis")
         self.assertEqual(session.instance_name, "main")
-        self.assertTrue(session.read_only)
         client.get_objects.assert_called_once_with(
             collection="/SPACE/PROJECT/MAIN_FREEZERS",
             type="FREEZER_TYPE",
             count=service.FREEZER_QUERY_LIMIT,
+            props=[
+                "$name",
+                "location_property",
+                "minimum_property",
+                "maximum_property",
+            ],
         )
 
     def test_rejects_partial_freezer_inventory(self):
@@ -309,7 +335,7 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
             service._freezer_inventory(
                 client,
                 "/SPACE/PROJECT/FREEZER_COLLECTION",
-                "FREEZER_TYPE",
+                service._load_config(),
             )
 
         self.assertEqual(
@@ -331,7 +357,7 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
             service._freezer_inventory(
                 client,
                 "/SPACE/PROJECT/FREEZER_COLLECTION",
-                "FREEZER_TYPE",
+                service._load_config(),
             )
 
     def test_fails_when_person_or_account_is_ambiguous(self):
@@ -427,28 +453,43 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
         openbis.get_collections.assert_not_called()
         openbis.new_object.assert_not_called()
 
-    def test_main_session_cannot_create_temperature_check(self):
+    def test_main_session_can_create_temperature_check(self):
         client = Mock()
+        freezer = service.Freezer(
+            "main-freezer-id",
+            "/SPACE/PROJECT/MAIN_FREEZERS/ONE",
+        )
+        person_id = "/SPACE/PROJECT/PEOPLE/TEST_USER"
+        client.get_collections.return_value = Mock(
+            df=pd.DataFrame(
+                [{"identifier": "/SPACE/PROJECT/CONTROL_COLLECTION"}]
+            )
+        )
+        parent = Mock(identifier=freezer.identifier, type="FREEZER_TYPE")
+        client.get_object.return_value = parent
+        record = Mock(identifier="/SPACE/PROJECT/CONTROL_COLLECTION/RECORD1")
+        client.new_object.return_value = record
         session = service.OpenBISSession(
             client=client,
             startup=service.OpenBISStartup(
                 user_id="testuser",
-                person_identifier="/SPACE/PROJECT/PEOPLE/TEST_USER",
-                freezers=(),
-                people=(),
+                person_identifier=person_id,
+                freezers=(freezer,),
+                people=(service.PersonOption(person_id, "Test User"),),
             ),
             instance_name="main",
         )
-        with self.assertRaisesRegex(RuntimeError, "disabled for the main"):
-            service.create_temperature_check(
-                session,
-                freezer_perm_id="main-freezer-id",
-                monitoring_date="2026-11-13",
-                temp_min_celsius=-20.0,
-                temp_max_celsius=-18.0,
-                person_identifier="/SPACE/PROJECT/PEOPLE/TEST_USER",
-            )
-        client.new_object.assert_not_called()
+        result = service.create_temperature_check(
+            session,
+            freezer_perm_id="main-freezer-id",
+            monitoring_date="2026-11-13",
+            temp_min_celsius=-20.0,
+            temp_max_celsius=-18.0,
+            person_identifier=person_id,
+        )
+        self.assertIs(result, record)
+        client.new_object.assert_called_once()
+        record.save.assert_called_once_with()
 
     def test_latest_temperature_check_returns_most_recent_parented_record(self):
         freezer = service.Freezer("freezer-1", "/FREEZER/ONE")

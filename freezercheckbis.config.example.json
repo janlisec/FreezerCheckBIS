@@ -11,6 +11,10 @@
   },
   "schema": {
     "freezer_type": "FREEZER_TYPE",
+    "freezer_name_property": "freezer_name_property",
+    "freezer_location_property": "freezer_location_property",
+    "freezer_temp_min_property": "freezer_temp_min_property",
+    "freezer_temp_max_property": "freezer_temp_max_property",
     "person_type": "PERSON_TYPE",
     "person_username_property": "username_property",
     "person_name_property": "$name",
