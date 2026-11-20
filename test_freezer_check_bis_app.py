@@ -5,14 +5,13 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
+from freezer_check_bis_app import create_app
 from freezer_check_bis_service import (
     Freezer,
     OpenBISSession,
     OpenBISStartup,
     PersonOption,
 )
-from freezer_check_bis_app import create_app
-
 
 TEST_CONFIG = {
     "instances": {
@@ -92,7 +91,9 @@ class FreezerCheckBISAppTests(unittest.TestCase):
             person_identifier=person_id,
             people=(
                 PersonOption(person_id, "Test User"),
-                PersonOption("/SPACE/PROJECT/PEOPLE/OTHER_USER", "Alex Sample"),
+                PersonOption(
+                    "/SPACE/PROJECT/PEOPLE/OTHER_USER", "Alex Sample"
+                ),
             ),
             freezers=(
                 Freezer(
@@ -173,13 +174,18 @@ class FreezerCheckBISAppTests(unittest.TestCase):
         self.assertIn(b"Temperature Min", home.data)
         self.assertIn(b"Temperature Max", home.data)
 
-    def test_freezer_limits_are_sent_to_the_browser_for_live_range_warnings(self):
+    def test_freezer_limits_are_sent_to_the_browser_for_live_range_warnings(
+        self,
+    ):
         self.login(self.make_session())
         home = self.client.get("/")
 
         self.assertIn(b'"temp_min_celsius": "-80.0"', home.data)
         self.assertIn(b'"temp_max_celsius": "-60.0"', home.data)
-        self.assertIn(b".temperature-out-of-range { background-color: #f4cccc; }", home.data)
+        self.assertIn(
+            b".temperature-out-of-range { background-color: #f4cccc; }",
+            home.data,
+        )
         self.assertIn(b"minimum < allowedMinimum", home.data)
         self.assertIn(b"maximum > allowedMaximum", home.data)
         self.assertIn(
@@ -235,7 +241,9 @@ class FreezerCheckBISAppTests(unittest.TestCase):
         self.assertIn(b'value="main" checked', response.data)
 
     def test_main_session_can_save_temperature_checks(self):
-        self.login(self.make_session(instance_name="main"), instance_name="main")
+        self.login(
+            self.make_session(instance_name="main"), instance_name="main"
+        )
         home = self.client.get("/")
         self.assertIn(b"Signed in to main as testuser", home.data)
         self.assertNotIn(b"read-only", home.data)
@@ -266,13 +274,17 @@ class FreezerCheckBISAppTests(unittest.TestCase):
 
         self.assertEqual(create_check.call_count, 2)
 
-    def test_latest_check_endpoint_returns_json_for_authenticated_session(self):
+    def test_latest_check_endpoint_returns_json_for_authenticated_session(
+        self,
+    ):
         self.login(self.make_session())
         with patch(
             "freezer_check_bis_app.get_latest_temperature_check",
             return_value=None,
         ) as latest_check:
-            response = self.client.get("/freezers/freezer-perm-id/latest-check")
+            response = self.client.get(
+                "/freezers/freezer-perm-id/latest-check"
+            )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.get_json(), {"latest_check": None})
@@ -289,7 +301,9 @@ class FreezerCheckBISAppTests(unittest.TestCase):
             "freezer_check_bis_app.get_latest_temperature_check",
             side_effect=RuntimeError("internal detail"),
         ):
-            response = self.client.get("/freezers/freezer-perm-id/latest-check")
+            response = self.client.get(
+                "/freezers/freezer-perm-id/latest-check"
+            )
 
         self.assertEqual(response.status_code, 503)
         self.assertEqual(
@@ -357,7 +371,9 @@ class FreezerCheckBISAppTests(unittest.TestCase):
                 "/checks",
                 data={
                     "csrf_token": self.form_token(home, "csrf_token"),
-                    "submission_token": self.form_token(home, "submission_token"),
+                    "submission_token": self.form_token(
+                        home, "submission_token"
+                    ),
                     "freezer_perm_id": "freezer-perm-id",
                     "monitoring_date": "2026-11-13",
                     "temp_min_celsius": "-20",
@@ -367,7 +383,9 @@ class FreezerCheckBISAppTests(unittest.TestCase):
             )
 
         self.assertEqual(response.status_code, 400)
-        self.assertIn(b"Temperature check was not saved: write rejected", response.data)
+        self.assertIn(
+            b"Temperature check was not saved: write rejected", response.data
+        )
         create_check.assert_called_once()
 
 

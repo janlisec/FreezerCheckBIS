@@ -1,5 +1,5 @@
 [tool.ruff]
-line-length = 79
+line-length = 100
 
 [tool.ruff.lint]
 select = [
@@ -10,3 +10,7 @@ select = [
 
 [tool.mypy]
 python_version = "3.12"
+
+[[tool.mypy.overrides]]
+module = ["pybis"]
+ignore_missing_imports = true

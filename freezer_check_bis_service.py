@@ -1,7 +1,7 @@
 """OpenBIS authentication and freezer preload for the temperature app."""
 
-import os
 import json
+import os
 from dataclasses import dataclass, field
 from datetime import date
 from math import isfinite
@@ -47,7 +47,9 @@ class OpenBISConfig:
 def _required_string(mapping: dict, key: str) -> str:
     value = mapping.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise RuntimeError(f"Configuration value '{key}' must be a non-empty string.")
+        raise RuntimeError(
+            f"Configuration value '{key}' must be a non-empty string."
+        )
     return value.strip()
 
 
@@ -67,7 +69,9 @@ def _load_config() -> OpenBISConfig:
             "URLs, collections, and schema identifiers."
         ) from error
     except json.JSONDecodeError as error:
-        raise RuntimeError(f"Configuration file is not valid JSON: {error}") from error
+        raise RuntimeError(
+            f"Configuration file is not valid JSON: {error}"
+        ) from error
 
     if not isinstance(raw_config, dict):
         raise RuntimeError("Configuration root must be a JSON object.")
@@ -79,7 +83,9 @@ def _load_config() -> OpenBISConfig:
     for instance_name in ("playground", "main"):
         raw_instance = raw_instances.get(instance_name)
         if not isinstance(raw_instance, dict):
-            raise RuntimeError(f"Configuration for '{instance_name}' is required.")
+            raise RuntimeError(
+                f"Configuration for '{instance_name}' is required."
+            )
         url = _required_string(raw_instance, "url")
         parsed_url = urlparse(url)
         if (
@@ -96,7 +102,9 @@ def _load_config() -> OpenBISConfig:
             )
         instances[instance_name] = InstanceConfig(
             url=url,
-            freezer_collection=_required_string(raw_instance, "freezer_collection"),
+            freezer_collection=_required_string(
+                raw_instance, "freezer_collection"
+            ),
         )
 
     schema = raw_config.get("schema")
@@ -123,7 +131,9 @@ def _load_config() -> OpenBISConfig:
         "temp_max_property",
         "acting_person_property",
     )
-    schema_values = {key: _required_string(schema, key) for key in schema_fields}
+    schema_values = {
+        key: _required_string(schema, key) for key in schema_fields
+    }
     return OpenBISConfig(instances=instances, **schema_values)
 
 
@@ -164,7 +174,9 @@ class OpenBISSession:
 
     client: Openbis = field(repr=False)
     startup: OpenBISStartup
-    config: OpenBISConfig = field(default_factory=lambda: _load_config(), repr=False)
+    config: OpenBISConfig = field(
+        default_factory=lambda: _load_config(), repr=False
+    )
     instance_name: str = "playground"
 
 
@@ -251,7 +263,9 @@ def _freezer_inventory(
         if not isinstance(identifier, str) or not identifier.strip():
             raise RuntimeError("A freezer record has no identifier.")
         if perm_id in seen_perm_ids:
-            raise RuntimeError("The freezer query returned duplicate permanent IDs.")
+            raise RuntimeError(
+                "The freezer query returned duplicate permanent IDs."
+            )
         seen_perm_ids.add(perm_id)
         freezers.append(
             Freezer(
@@ -259,7 +273,8 @@ def _freezer_inventory(
                 identifier=identifier,
                 name=_freezer_property(
                     row.get(config.freezer_name_property.upper())
-                ) or identifier.rsplit("/", 1)[-1],
+                )
+                or identifier.rsplit("/", 1)[-1],
                 bam_location_complete=_freezer_property(
                     row.get(config.freezer_location_property.upper())
                 ),
@@ -343,7 +358,9 @@ def _person_inventory(
         if not isinstance(identifier, str) or not identifier.strip():
             raise RuntimeError("A person record has no identifier.")
         if identifier in seen_identifiers:
-            raise RuntimeError("The person query returned duplicate identifiers.")
+            raise RuntimeError(
+                "The person query returned duplicate identifiers."
+            )
         organizational_entity = row.get(
             config.person_organizational_entity_property.upper()
         )
@@ -391,24 +408,34 @@ def create_temperature_check(
     person_identifier: str,
 ):
     """Create one new control record, linked to a loaded freezer."""
-    freezer_by_id = {freezer.perm_id: freezer for freezer in session.startup.freezers}
+    freezer_by_id = {
+        freezer.perm_id: freezer for freezer in session.startup.freezers
+    }
     freezer = freezer_by_id.get(freezer_perm_id)
     if freezer is None:
-        raise ValueError("The selected freezer is not in the loaded inventory.")
+        raise ValueError(
+            "The selected freezer is not in the loaded inventory."
+        )
 
     try:
         date.fromisoformat(monitoring_date)
     except (TypeError, ValueError) as error:
-        raise ValueError("Monitoring date must be a valid ISO date.") from error
+        raise ValueError(
+            "Monitoring date must be a valid ISO date."
+        ) from error
 
     if not isfinite(temp_min_celsius) or not isfinite(temp_max_celsius):
         raise ValueError("Temperatures must be finite numbers.")
     if temp_min_celsius > temp_max_celsius:
-        raise ValueError("Minimum temperature cannot exceed maximum temperature.")
+        raise ValueError(
+            "Minimum temperature cannot exceed maximum temperature."
+        )
 
     people = {person.identifier for person in session.startup.people}
     if person_identifier not in people:
-        raise ValueError("The selected person is not in the loaded people list.")
+        raise ValueError(
+            "The selected person is not in the loaded people list."
+        )
 
     path_parts = session.config.control_collection.strip("/").split("/")
     if len(path_parts) != 3 or not all(path_parts):
@@ -425,9 +452,12 @@ def create_temperature_check(
     )
     if (
         len(collections.df) != 1
-        or collections.df.iloc[0].get("identifier") != session.config.control_collection
+        or collections.df.iloc[0].get("identifier")
+        != session.config.control_collection
     ):
-        raise RuntimeError("The configured control collection was not uniquely found.")
+        raise RuntimeError(
+            "The configured control collection was not uniquely found."
+        )
 
     parent = session.client.get_object(freezer.perm_id)
     if (
@@ -462,10 +492,14 @@ def get_latest_temperature_check(
     freezer_perm_id: str,
 ) -> TemperatureReading | None:
     """Return the latest dated check linked to a loaded freezer."""
-    freezer_by_id = {freezer.perm_id: freezer for freezer in session.startup.freezers}
+    freezer_by_id = {
+        freezer.perm_id: freezer for freezer in session.startup.freezers
+    }
     freezer = freezer_by_id.get(freezer_perm_id)
     if freezer is None:
-        raise ValueError("The selected freezer is not in the loaded inventory.")
+        raise ValueError(
+            "The selected freezer is not in the loaded inventory."
+        )
 
     result = session.client.get_objects(
         collection=session.config.control_collection,
@@ -496,7 +530,9 @@ def get_latest_temperature_check(
         if not isfinite(temp_min) or not isfinite(temp_max):
             continue
 
-        if latest is None or parsed_date > date.fromisoformat(latest.monitoring_date):
+        if latest is None or parsed_date > date.fromisoformat(
+            latest.monitoring_date
+        ):
             latest = TemperatureReading(
                 monitoring_date=parsed_date.isoformat(),
                 temp_min_celsius=temp_min,

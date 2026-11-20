@@ -37,8 +37,12 @@ jobs:
           
       - name: Install QA tools
         run: |
-          pip install ruff
+          pip install ruff mypy
 
       - name: Ruff
         run: |
           ruff check .
+          
+      - name: Type checking
+        run: |
+          mypy freezer_check_bis_app.py freezer_check_bis_service.py

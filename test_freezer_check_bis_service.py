@@ -129,19 +129,29 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
         )
 
         with patch.object(service, "Openbis", return_value=client) as factory:
-            session = service.authenticate_openbis("test-user@example.invalid", "dummy-test-password")
+            session = service.authenticate_openbis(
+                "test-user@example.invalid", "dummy-test-password"
+            )
 
-        factory.assert_called_once_with("https://playground.example.invalid/openbis")
+        factory.assert_called_once_with(
+            "https://playground.example.invalid/openbis"
+        )
         self.assertEqual(session.instance_name, "playground")
         client.login.assert_called_once_with(
-            "test-user@example.invalid", "dummy-test-password", save_token=False
+            "test-user@example.invalid",
+            "dummy-test-password",
+            save_token=False,
         )
         client.get_persons.assert_called_once_with(
             email="test-user@example.invalid", count=10
         )
         self.assertEqual(
             client.get_samples.call_args_list[0].kwargs,
-            {"type": "PERSON_TYPE", "username_property": "testuser", "count": 10},
+            {
+                "type": "PERSON_TYPE",
+                "username_property": "testuser",
+                "count": 10,
+            },
         )
         self.assertEqual(
             client.get_samples.call_args_list[1].kwargs,
@@ -206,7 +216,9 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
         self._write_config()
         with patch.object(service, "Openbis") as factory:
             with self.assertRaisesRegex(RuntimeError, "must be HTTPS"):
-                service.authenticate_openbis("test-user@example.invalid", "dummy-test-password")
+                service.authenticate_openbis(
+                    "test-user@example.invalid", "dummy-test-password"
+                )
         factory.assert_not_called()
 
     def test_playground_is_the_default_instance(self):
@@ -297,7 +309,11 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
             df=pd.DataFrame([{"userId": "testuser", "active": True}])
         )
         client.get_samples.side_effect = [
-            Mock(df=pd.DataFrame([{"identifier": "/SPACE/PROJECT/PEOPLE/TEST_USER"}])),
+            Mock(
+                df=pd.DataFrame(
+                    [{"identifier": "/SPACE/PROJECT/PEOPLE/TEST_USER"}]
+                )
+            ),
             Mock(
                 totalCount=1,
                 df=pd.DataFrame(
@@ -309,9 +325,13 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
 
         with patch.object(service, "Openbis", return_value=client):
             with self.assertRaisesRegex(RuntimeError, "incomplete"):
-                service.authenticate_openbis("test-user@example.invalid", "dummy-test-password")
+                service.authenticate_openbis(
+                    "test-user@example.invalid", "dummy-test-password"
+                )
 
-    def test_empty_configured_collection_reports_other_freezer_collections(self):
+    def test_empty_configured_collection_reports_other_freezer_collections(
+        self,
+    ):
         client = Mock()
         client.get_objects.side_effect = [
             Mock(totalCount=0, df=pd.DataFrame()),
@@ -320,7 +340,9 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
                 df=pd.DataFrame(
                     [
                         {"identifier": "/SPACE/PROJECT/OTHER_COLLECTION/ONE"},
-                        {"identifier": "/SPACE/PROJECT/ANOTHER_COLLECTION/TWO"},
+                        {
+                            "identifier": "/SPACE/PROJECT/ANOTHER_COLLECTION/TWO"
+                        },
                     ]
                 ),
             ),
@@ -373,7 +395,9 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
 
         with patch.object(service, "Openbis", return_value=client):
             with self.assertRaisesRegex(RuntimeError, "exactly one"):
-                service.authenticate_openbis("test-user@example.invalid", "dummy-test-password")
+                service.authenticate_openbis(
+                    "test-user@example.invalid", "dummy-test-password"
+                )
         client.get_samples.assert_not_called()
 
     def test_create_temperature_check_sets_properties_and_parent(self):
@@ -381,8 +405,12 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
             "freezer-1", "/SPACE/PROJECT/FREEZER_COLLECTION/ONE"
         )
         people = (
-            service.PersonOption("/SPACE/PROJECT/PEOPLE/TEST_USER", "Test User"),
-            service.PersonOption("/SPACE/PROJECT/PEOPLE/OTHER_USER", "Alex Sample"),
+            service.PersonOption(
+                "/SPACE/PROJECT/PEOPLE/TEST_USER", "Test User"
+            ),
+            service.PersonOption(
+                "/SPACE/PROJECT/PEOPLE/OTHER_USER", "Alex Sample"
+            ),
         )
         openbis = Mock()
         openbis.get_collections.return_value = Mock(
@@ -428,7 +456,9 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
         record.set_parents.assert_called_once_with([parent])
         record.save.assert_called_once_with()
 
-    def test_create_temperature_check_rejects_bad_readings_without_writing(self):
+    def test_create_temperature_check_rejects_bad_readings_without_writing(
+        self,
+    ):
         openbis = Mock()
         person_id = "/SPACE/PROJECT/PEOPLE/TEST_USER"
         session = service.OpenBISSession(
@@ -491,7 +521,9 @@ class FreezerCheckBISServiceTests(unittest.TestCase):
         client.new_object.assert_called_once()
         record.save.assert_called_once_with()
 
-    def test_latest_temperature_check_returns_most_recent_parented_record(self):
+    def test_latest_temperature_check_returns_most_recent_parented_record(
+        self,
+    ):
         freezer = service.Freezer("freezer-1", "/FREEZER/ONE")
         openbis = Mock()
         openbis.get_objects.return_value = Mock(

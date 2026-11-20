@@ -42,7 +42,13 @@ LOGIN_TEMPLATE = """<!doctype html>
     main { margin: 8vh auto 0; max-width: 32rem; }
     h1, main > p { text-align: center; }
     label { display: block; margin-top: 1rem; }
-    input, button { box-sizing: border-box; font: inherit; font-size: 1.15rem; min-height: 3.25rem; padding: .5rem; width: 100%; }
+    input, button { 
+      box-sizing: border-box; 
+      font: inherit; 
+      font-size: 1.15rem; 
+      min-height: 3.25rem; 
+      padding: .5rem; width: 100%; 
+    }
     fieldset { border: 1px solid #999; margin-top: 1rem; padding: .5rem 1rem 1rem; }
     legend { padding: 0 .25rem; }
     .instance-option { align-items: center; display: flex; gap: .6rem; margin-top: .5rem; }
@@ -50,7 +56,17 @@ LOGIN_TEMPLATE = """<!doctype html>
     .instance-option label { margin: 0; }
     button { margin-top: 1rem; }
     button:disabled { cursor: wait; opacity: .65; }
-    .spinner { animation: spin 1s linear infinite; border: .2rem solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; height: 1rem; margin-right: .5rem; vertical-align: -.15rem; width: 1rem; }
+    .spinner { 
+      animation: spin 1s linear infinite; 
+      border: .2rem solid currentColor; 
+      border-right-color: transparent; 
+      border-radius: 50%; 
+      display: inline-block; 
+      height: 1rem; 
+      margin-right: .5rem; 
+      vertical-align: -.15rem; 
+      width: 1rem; 
+    }
     .spinner[hidden] { display: none !important; }
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
@@ -114,8 +130,20 @@ STARTUP_TEMPLATE = """<!doctype html>
   <style>
     body { font-family: sans-serif; margin: 0 auto; max-width: 42rem; padding: 1rem; }
     label { display: block; }
-    input, select, button { box-sizing: border-box; font: inherit; font-size: 1.1rem; height: 3.25rem; min-width: 0; padding: .5rem; width: 100%; }
-    .field-grid, .scan-grid, .action-grid { display: grid; gap: .75rem; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    input, select, button { 
+      box-sizing: border-box; 
+      font: inherit; 
+      font-size: 1.1rem; 
+      height: 3.25rem; 
+      min-width: 0; 
+      padding: .5rem; 
+      width: 100%; 
+    }
+    .field-grid, .scan-grid, .action-grid { 
+      display: grid; 
+      gap: .75rem; 
+      grid-template-columns: repeat(2, minmax(0, 1fr)); 
+    }
     .scan-grid { align-items: end; }
     .scan-grid > label, .scan-grid > .wide { grid-column: 1 / -1; }
     .field { min-width: 0; }
@@ -123,10 +151,26 @@ STARTUP_TEMPLATE = """<!doctype html>
     .temperature-out-of-range { background-color: #f4cccc; }
     .action-grid { margin-top: 1rem; }
     .action-grid button { margin: 0; }
-    .freezer-details { display: grid; gap: .35rem .75rem; grid-template-columns: max-content minmax(0, 1fr); margin: .5rem 0 1rem; }
+    .freezer-details { 
+      display: grid; 
+      gap: .35rem .75rem; 
+      grid-template-columns: 
+      max-content minmax(0, 1fr); 
+      margin: .5rem 0 1rem; 
+    }
     .freezer-details dt { font-weight: bold; }
     .freezer-details dd { margin: 0; overflow-wrap: anywhere; }
-    .spinner { animation: spin 1s linear infinite; border: .2rem solid currentColor; border-right-color: transparent; border-radius: 50%; display: inline-block; height: 1rem; margin-right: .5rem; vertical-align: -.15rem; width: 1rem; }
+    .spinner { 
+      animation: spin 1s linear infinite; 
+      border: .2rem solid currentColor; 
+      border-right-color: transparent; 
+      border-radius: 50%; 
+      display: inline-block; 
+      height: 1rem; 
+      margin-right: .5rem; 
+      vertical-align: -.15rem; 
+      width: 1rem;
+    }
     .spinner[hidden] { display: none !important; }
     button:disabled { cursor: wait; opacity: .65; }
     @keyframes spin { to { transform: rotate(360deg); } }
@@ -464,11 +508,7 @@ class _SessionStore:
         session_id = secrets.token_urlsafe(32)
         now = time.monotonic()
         with self._lock:
-            expired = [
-                key
-                for key, entry in self._sessions.items()
-                if entry.expires_at <= now
-            ]
+            expired = [key for key, entry in self._sessions.items() if entry.expires_at <= now]
             for key in expired:
                 del self._sessions[key]
             self._sessions[session_id] = _ServerSession(
@@ -511,16 +551,13 @@ class _SessionStore:
                 return False
             expected = entry.submission_token
             entry.submission_token = None
-            return isinstance(expected, str) and hmac.compare_digest(
-                expected, submitted
-            )
+            return isinstance(expected, str) and hmac.compare_digest(expected, submitted)
+
 
 def _configured_secret(secret_key: str | None) -> str:
     key = secret_key or os.environ.get("FLASK_SECRET_KEY", "")
     if len(key.encode("utf-8")) < 32:
-        raise RuntimeError(
-            "Set FLASK_SECRET_KEY to a random secret of at least 32 bytes."
-        )
+        raise RuntimeError("Set FLASK_SECRET_KEY to a random secret of at least 32 bytes.")
     return key
 
 
@@ -532,9 +569,7 @@ def create_app(secret_key: str | None = None) -> Flask:
         raise RuntimeError("FLASK_COOKIE_SECURE must be set to 0 or 1.")
     app.config.update(
         MAX_CONTENT_LENGTH=16 * 1024,
-        PERMANENT_SESSION_LIFETIME=timedelta(
-            seconds=SESSION_LIFETIME_SECONDS
-        ),
+        PERMANENT_SESSION_LIFETIME=timedelta(seconds=SESSION_LIFETIME_SECONDS),
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=cookie_secure_setting == "1",
@@ -551,9 +586,7 @@ def create_app(secret_key: str | None = None) -> Flask:
     def validate_csrf_token() -> None:
         expected = session.get("csrf_token")
         submitted = request.form.get("csrf_token", "")
-        if not isinstance(expected, str) or not hmac.compare_digest(
-            expected, submitted
-        ):
+        if not isinstance(expected, str) or not hmac.compare_digest(expected, submitted):
             abort(400, description="Invalid or missing CSRF token.")
 
     def authenticated_openbis() -> tuple[str, OpenBISSession] | None:
@@ -709,7 +742,10 @@ def create_app(secret_key: str | None = None) -> Flask:
 
         submitted_token = request.form.get("submission_token", "")
         if not sessions.consume_submission_token(session_id, submitted_token):
-            flash("This form was already submitted or has expired. Review and retry.", "error")
+            flash(
+                "This form was already submitted or has expired. Review and retry.",
+                "error",
+            )
             return render_home(session_id, openbis_session, 409)
 
         try:
