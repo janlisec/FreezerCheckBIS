@@ -101,3 +101,12 @@ The Flask development server is not intended for production deployment.
 
 For shared deployments the application should be operated behind an approved
 reverse proxy and HTTPS endpoint.
+
+## Auditability
+
+FreezerCheckBIS does not maintain a separate business audit log.
+
+All temperature check records are stored in openBIS and remain attributable
+to the authenticated openBIS user account used to create them.
+
+No application logging is implemented.
