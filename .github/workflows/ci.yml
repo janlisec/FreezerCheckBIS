@@ -34,3 +34,11 @@ jobs:
       - name: Run tests
         run: |
           pytest -q
+          
+      - name: Install QA tools
+        run: |
+          pip install ruff
+
+      - name: Ruff
+        run: |
+          ruff check .
