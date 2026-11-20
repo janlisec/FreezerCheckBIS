@@ -696,7 +696,12 @@ def create_app(secret_key: str | None = None) -> Flask:
         try:
             latest = get_latest_temperature_check(openbis_session, freezer_perm_id)
         except ValueError as error:
-            return jsonify(error=str(error)), 404
+            app.logger.warning(
+                "Invalid latest-check request (%s): %s",
+                type(error).__name__,
+                error,
+            )
+            return jsonify(error="Freezer not found."), 404
         except (RuntimeError, RequestException) as error:
             app.logger.warning(
                 "Previous temperature lookup failed (%s): %s",
