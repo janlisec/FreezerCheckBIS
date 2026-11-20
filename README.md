@@ -1,6 +1,7 @@
 # FreezerCheckBIS
 
 [![CI](https://github.com/janlisec/FreezerCheckBIS/actions/workflows/ci.yml/badge.svg)](https://github.com/janlisec/FreezerCheckBIS/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/janlisec/FreezerCheckBIS/actions/workflows/codeql.yml/badge.svg)](https://github.com/janlisec/FreezerCheckBIS/actions/workflows/codeql.yml)
 
 FreezerCheckBIS is a Python/Flask application for recording freezer temperature
 checks in openBIS. A user signs in to an openBIS instance, selects a freezer by
